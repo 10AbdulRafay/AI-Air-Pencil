@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+.vscode/
+
+*.log
+
+# Local generated drawings
+drawings/*
+
+# Python cache
+.pytest_cache/
+
+# OS files
+.DS_Store
+Thumbs.db
