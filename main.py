@@ -1,19 +1,29 @@
 # ============================================================
 # AI AIR PENCIL - WEB VERSION
 # ============================================================
-# This file is based on the original AI Air Pencil code.
-# The original gesture, drawing, eraser, color, brush-size,
-# save, undo/redo, clear, notification and UI rendering logic
-# is preserved.
+# Gesture-based digital drawing application
 #
-# The desktop cv2.imshow()/keyboard/mouse loop is replaced by
-# a browser MJPEG stream and web commands.
+# Backend:
+#   - OpenCV
+#   - MediaPipe
+#   - NumPy
+#   - Flask MJPEG stream
+#
+# Features:
+#   - Air drawing
+#   - Color selection
+#   - Black color
+#   - Dynamic brush size
+#   - Eraser
+#   - Undo
+#   - Redo
+#   - Clear
+#   - Save
+#   - Web commands
 # ============================================================
 
 import queue
 import threading
-
-
 import cv2
 import mediapipe as mp
 import numpy as np
@@ -21,12 +31,6 @@ import os
 import math
 import time
 from pathlib import Path
-
-
-# ============================================================
-# AI AIR PENCIL
-# Modern Gesture-Based Drawing Application
-# ============================================================
 
 
 # ============================================================
@@ -38,8 +42,13 @@ VisionRunningMode = mp.tasks.vision.RunningMode
 HandLandmarker = mp.tasks.vision.HandLandmarker
 HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
 
+
 PROJECT_DIR = Path(__file__).resolve().parent
-MODEL_PATH = str(PROJECT_DIR / "hand_landmarker.task")
+
+MODEL_PATH = str(
+    PROJECT_DIR / "hand_landmarker.task"
+)
+
 
 options = HandLandmarkerOptions(
     base_options=BaseOptions(
@@ -54,7 +63,7 @@ options = HandLandmarkerOptions(
 
 
 # ============================================================
-# COLORS - BGR
+# UI COLORS - BGR
 # ============================================================
 
 BG = (13, 17, 23)
@@ -74,7 +83,7 @@ PURPLE = (210, 100, 220)
 
 
 # ============================================================
-# COLOR PALETTE
+# DRAWING COLOR PALETTE
 # ============================================================
 
 COLORS = [
@@ -89,7 +98,7 @@ COLORS = [
 
 
 # ============================================================
-# GLOBAL UI STATE
+# MOUSE STATE
 # ============================================================
 
 mouse_x = -1
@@ -296,17 +305,29 @@ def push_undo(
     undo_stack,
     redo_stack,
     canvas,
+    canvas_mask,
     max_history
 ):
+    """
+    Save the complete current drawing state.
+
+    IMPORTANT:
+    This function must always receive BOTH:
+        canvas
+        canvas_mask
+    """
 
     undo_stack.append(
-        canvas.copy()
+        (
+            canvas.copy(),
+            canvas_mask.copy()
+        )
     )
 
     if len(undo_stack) > max_history:
-
         undo_stack.pop(0)
 
+    # A new drawing operation creates a new branch.
     redo_stack.clear()
 
 
@@ -509,7 +530,7 @@ def draw_top_bar(
     )
 
     # --------------------------------------------------------
-    # Live
+    # LIVE
     # --------------------------------------------------------
 
     live_x = width - 90
@@ -532,16 +553,7 @@ def draw_top_bar(
     )
 
     # --------------------------------------------------------
-    # Color palette
-    # FIXED: palette coordinates now match selection logic
-    # --------------------------------------------------------
-
-# --------------------------------------------------------
-# LARGE COLOR PALETTE
-# --------------------------------------------------------
-
-    # --------------------------------------------------------
-    # LARGE COLOR PALETTE
+    # COLOR PALETTE
     # --------------------------------------------------------
 
     palette_y = 72
@@ -553,39 +565,7 @@ def draw_top_bar(
 
         x = palette_start_x + i * palette_spacing
 
-        # ----------------------------------------------------
-        # Hover / selection area
-        # ----------------------------------------------------
-
-        if (
-            abs(mouse_x - x) <= 24
-            and abs(mouse_y - palette_y) <= 24
-        ):
-
-            cv2.circle(
-                output,
-                (x, palette_y),
-                10,
-                color,
-                -1,
-                cv2.LINE_AA
-            )
-
-            # Give dark colors a visible border
-            if color == (0, 0, 0):
-                cv2.circle(
-                    output,
-                    (x, palette_y),
-                    11,
-                    WHITE,
-                    1,
-                    cv2.LINE_AA
-                )
-
-        # ----------------------------------------------------
-        # Outer dark ring
-        # ----------------------------------------------------
-
+        # Outer ring
         cv2.circle(
             output,
             (x, palette_y),
@@ -595,10 +575,7 @@ def draw_top_bar(
             cv2.LINE_AA
         )
 
-        # ----------------------------------------------------
         # Color
-        # ----------------------------------------------------
-
         cv2.circle(
             output,
             (x, palette_y),
@@ -608,8 +585,9 @@ def draw_top_bar(
             cv2.LINE_AA
         )
 
-        # Keep BLACK visible against the dark toolbar.
+        # Black needs a visible border
         if color == (0, 0, 0):
+
             cv2.circle(
                 output,
                 (x, palette_y),
@@ -619,10 +597,7 @@ def draw_top_bar(
                 cv2.LINE_AA
             )
 
-        # ----------------------------------------------------
         # Selected color
-        # ----------------------------------------------------
-
         if color == current_color:
 
             cv2.circle(
@@ -633,210 +608,27 @@ def draw_top_bar(
                 2,
                 cv2.LINE_AA
             )
-    return output
 
-# ============================================================
-# DRAW BOTTOM DOCK
-# ============================================================
+        # Hover
+        if (
+            abs(mouse_x - x) <= 24
+            and abs(mouse_y - palette_y) <= 24
+        ):
 
-def draw_bottom_dock(
-    output,
-    undo_stack,
-    redo_stack
-):
-
-    height, width = output.shape[:2]
-
-    dock_width = min(
-        850,
-        width - 40
-    )
-
-    dock_height = 100
-
-    x1 = (width - dock_width) // 2
-    y1 = height - dock_height - 28
-
-    x2 = x1 + dock_width
-    y2 = y1 + dock_height
-
-    # --------------------------------------------------------
-    # Shadow
-    # --------------------------------------------------------
-
-    shadow = output.copy()
-
-    rounded_rectangle(
-        shadow,
-        (x1 + 5, y1 + 7),
-        (x2 + 5, y2 + 7),
-        (0, 0, 0),
-        20
-    )
-
-    output = cv2.addWeighted(
-        shadow,
-        0.35,
-        output,
-        0.65,
-        0
-    )
-
-    # --------------------------------------------------------
-    # Dock
-    # --------------------------------------------------------
-
-    rounded_rectangle(
-        output,
-        (x1, y1),
-        (x2, y2),
-        PANEL,
-        20
-    )
-
-    # --------------------------------------------------------
-    # Section title
-    # --------------------------------------------------------
-
-    text(
-        output,
-        "TOOLS",
-        (x1 + 20, y1 + 25),
-        0.30,
-        MUTED,
-        1
-    )
-
-    # --------------------------------------------------------
-    # Buttons
-    # --------------------------------------------------------
-
-    buttons = [
-        ("UNDO", "Z", len(undo_stack) > 0),
-        ("REDO", "Y", len(redo_stack) > 0),
-        ("CLEAR", "C", True),
-        ("SAVE", "S", True),
-        ("QUIT", "Q", True)
-    ]
-
-    start_x = x1 + 20
-
-    for i, (
-        name,
-        shortcut,
-        enabled
-    ) in enumerate(buttons):
-
-        bx = start_x + i * 105
-
-        by = y1 + 38
-
-        bx2 = bx + 88
-        by2 = y1 + 79
-
-        hovered = inside_rect(
-            mouse_x,
-            mouse_y,
-            bx,
-            by,
-            bx2,
-            by2
-        )
-
-        if not enabled:
-
-            color = (24, 28, 34)
-
-        elif hovered:
-
-            color = PANEL_HOVER
-
-        else:
-
-            color = PANEL_LIGHT
-
-        rounded_rectangle(
-            output,
-            (bx, by),
-            (bx2, by2),
-            color,
-            10
-        )
-
-        # Border on hover
-        if hovered and enabled:
-
-            cv2.rectangle(
+            cv2.circle(
                 output,
-                (bx, by),
-                (bx2, by2),
+                (x, palette_y),
+                palette_radius + 7,
                 BORDER,
                 1,
                 cv2.LINE_AA
             )
 
-        label_color = (
-            WHITE
-            if enabled
-            else MUTED
-        )
-
-        text(
-            output,
-            name,
-            (bx + 10, y1 + 57),
-            0.32,
-            label_color,
-            1
-        )
-
-        text(
-            output,
-            shortcut,
-            (bx + 39, y1 + 72),
-            0.27,
-            MUTED,
-            1
-        )
-
-    # --------------------------------------------------------
-    # Gesture guide
-    # --------------------------------------------------------
-
-    guide_x = x1 + 560
-
-    text(
-        output,
-        "GESTURES",
-        (guide_x, y1 + 25),
-        0.30,
-        MUTED,
-        1
-    )
-
-    text(
-        output,
-        "1 Draw   2 Color   Pinch Size",
-        (guide_x, y1 + 49),
-        0.30,
-        WHITE,
-        1
-    )
-
-    text(
-        output,
-        "4 Erase   Thumb Save",
-        (guide_x, y1 + 70),
-        0.30,
-        WHITE,
-        1
-    )
-
     return output
 
 
 # ============================================================
-# DRAW SAVE NOTIFICATION
+# DRAW NOTIFICATION
 # ============================================================
 
 def draw_notification(
@@ -855,7 +647,6 @@ def draw_notification(
     x1 = (width - box_width) // 2
     y1 = 105
 
-    # Fade toward the end
     alpha = min(
         1.0,
         timer / 15.0
@@ -1014,7 +805,7 @@ while os.path.exists(
 
 
 # ============================================================
-# HISTORY
+# GLOBAL HISTORY
 # ============================================================
 
 undo_stack = []
@@ -1024,26 +815,33 @@ max_history = 20
 
 
 # ============================================================
-
-
-# ============================================================
 # WEB COMMAND STATE
 # ============================================================
 
 command_queue = queue.Queue()
+
 stop_event = threading.Event()
 
 
 def send_command(command):
-    command_queue.put(command)
+
+    if not command:
+        return
+
+    command_queue.put(
+        str(command)
+    )
 
 
 def reset_web_state():
+
     stop_event.clear()
 
-    while not command_queue.empty():
+    while True:
+
         try:
             command_queue.get_nowait()
+
         except queue.Empty:
             break
 
@@ -1054,92 +852,115 @@ def reset_web_state():
 
 def generate_frames():
 
-    reset_web_state()
     global drawing_number
+
+    reset_web_state()
+
+    # New browser session = new history
+    undo_stack.clear()
+    redo_stack.clear()
 
     with HandLandmarker.create_from_options(
         options
     ) as landmarker:
 
-    
-        # --------------------------------------------------------
-        # Camera
-        # --------------------------------------------------------
-    
+        # ----------------------------------------------------
+        # CAMERA
+        # ----------------------------------------------------
+
         camera = cv2.VideoCapture(0)
-    
+
         if not camera.isOpened():
-    
+
             print(
                 "ERROR: Could not open webcam."
             )
-    
-            raise SystemExit
-    
+
+            return
+
         camera.set(
             cv2.CAP_PROP_FRAME_WIDTH,
             1280
         )
-    
+
         camera.set(
             cv2.CAP_PROP_FRAME_HEIGHT,
             720
         )
-    
-        # --------------------------------------------------------
-        # Variables
-        # --------------------------------------------------------
-    
+
+        # ----------------------------------------------------
+        # CANVAS
+        # ----------------------------------------------------
+
         canvas = None
         canvas_mask = None
-    
+
+        # ----------------------------------------------------
+        # STROKE POSITION
+        # ----------------------------------------------------
+
         previous_x = None
         previous_y = None
-    
+
+        # ----------------------------------------------------
+        # SETTINGS
+        # ----------------------------------------------------
+
         smooth_factor = 0.22
-    
+
+        # IMPORTANT:
+        # White is the default color.
+        # Black is selected normally from COLORS.
         current_color = WHITE
-    
+
         brush_size = 8
-    
+
         min_brush_size = 3
-    
         max_brush_size = 50
-    
+
         eraser_size = 40
-    
+
+        # ----------------------------------------------------
+        # GESTURE STATE
+        # ----------------------------------------------------
+
         gesture = "NO HAND"
-    
+
+        # ----------------------------------------------------
+        # NOTIFICATION
+        # ----------------------------------------------------
+
         save_message = ""
-    
         save_message_timer = 0
-    
-        # --------------------------------------------------------
-        # Gesture cooldowns
-        # --------------------------------------------------------
-    
+
+        # ----------------------------------------------------
+        # COOLDOWNS
+        # ----------------------------------------------------
+
         last_save_time = 0
         last_color_time = 0
-    
-        gesture_cooldown = 0.7
-    
-        # --------------------------------------------------------
-        # Timestamp
-        # --------------------------------------------------------
-    
-        last_timestamp = 0
-    
-        # --------------------------------------------------------
-        # FPS
-        # --------------------------------------------------------
-    
-        previous_time = time.perf_counter()
-    
-        fps = 0
-    
-        # --------------------------------------------------------
 
-        while True:
+        gesture_cooldown = 0.7
+
+        # ----------------------------------------------------
+        # MEDIAPIPE TIMESTAMP
+        # ----------------------------------------------------
+
+        last_timestamp = 0
+
+        # ----------------------------------------------------
+        # FPS
+        # ----------------------------------------------------
+
+        previous_time = time.perf_counter()
+
+        fps = 0
+
+        # ====================================================
+        # MAIN LOOP
+        # ====================================================
+
+        while not stop_event.is_set():
 
             success, frame = camera.read()
 
@@ -1151,9 +972,9 @@ def generate_frames():
 
                 break
 
-            # ----------------------------------------------------
-            # Mirror camera
-            # ----------------------------------------------------
+            # ------------------------------------------------
+            # MIRROR CAMERA
+            # ------------------------------------------------
 
             frame = cv2.flip(
                 frame,
@@ -1162,13 +983,15 @@ def generate_frames():
 
             height, width = frame.shape[:2]
 
-            # ----------------------------------------------------
-            # Canvas
-            # ----------------------------------------------------
+            # ------------------------------------------------
+            # CREATE CANVAS
+            # ------------------------------------------------
 
             if canvas is None:
 
-                canvas = np.zeros_like(frame)
+                canvas = np.zeros_like(
+                    frame
+                )
 
             if canvas_mask is None:
 
@@ -1176,43 +999,109 @@ def generate_frames():
                     frame.shape[:2],
                     dtype=np.uint8
                 )
-            # ----------------------------------------------------
-            # Browser commands from the website
-            # ----------------------------------------------------
 
-            while not command_queue.empty():
+            # =================================================
+            # PROCESS WEB COMMANDS
+            # =================================================
 
-                command = command_queue.get()
+            while True:
+
+                try:
+
+                    command = command_queue.get_nowait()
+
+                except queue.Empty:
+
+                    break
+
+                command = str(
+                    command
+                ).strip()
+
+                # ---------------------------------------------
+                # UNDO
+                # ---------------------------------------------
 
                 if command == "undo":
 
                     if len(undo_stack) > 0:
 
+                        # Current state becomes redo state.
                         redo_stack.append(
-                            canvas.copy()
+                            (
+                                canvas.copy(),
+                                canvas_mask.copy()
+                            )
                         )
 
-                        canvas = undo_stack.pop()
+                        # Restore previous state.
+                        old_canvas, old_mask = (
+                            undo_stack.pop()
+                        )
 
+                        canvas = old_canvas
+                        canvas_mask = old_mask
+
+                        # Break the current stroke.
                         previous_x = None
                         previous_y = None
 
-                        print("UNDO successful.")
+                        save_message = "UNDO"
+                        save_message_timer = 20
+
+                        print(
+                            "UNDO successful."
+                        )
+
+                    else:
+
+                        print(
+                            "UNDO: nothing to undo."
+                        )
+
+                # ---------------------------------------------
+                # REDO
+                # ---------------------------------------------
 
                 elif command == "redo":
 
                     if len(redo_stack) > 0:
 
+                        # Current state becomes undo state.
                         undo_stack.append(
-                            canvas.copy()
+                            (
+                                canvas.copy(),
+                                canvas_mask.copy()
+                            )
                         )
 
-                        canvas = redo_stack.pop()
+                        # Restore redo state.
+                        old_canvas, old_mask = (
+                            redo_stack.pop()
+                        )
+
+                        canvas = old_canvas
+                        canvas_mask = old_mask
 
                         previous_x = None
                         previous_y = None
 
-                        print("REDO successful.")
+                        save_message = "REDO"
+                        save_message_timer = 20
+
+                        print(
+                            "REDO successful."
+                        )
+
+                    else:
+
+                        print(
+                            "REDO: nothing to redo."
+                        )
+
+                # ---------------------------------------------
+                # CLEAR
+                # ---------------------------------------------
 
                 elif command == "clear":
 
@@ -1220,10 +1109,18 @@ def generate_frames():
                         undo_stack,
                         redo_stack,
                         canvas,
+                        canvas_mask,
                         max_history
                     )
 
-                    canvas = np.zeros_like(frame)
+                    canvas = np.zeros_like(
+                        frame
+                    )
+
+                    canvas_mask = np.zeros(
+                        frame.shape[:2],
+                        dtype=np.uint8
+                    )
 
                     previous_x = None
                     previous_y = None
@@ -1231,7 +1128,13 @@ def generate_frames():
                     save_message = "CANVAS CLEARED"
                     save_message_timer = 30
 
-                    print("Canvas cleared.")
+                    print(
+                        "Canvas cleared."
+                    )
+
+                # ---------------------------------------------
+                # SAVE
+                # ---------------------------------------------
 
                 elif command == "save":
 
@@ -1249,36 +1152,89 @@ def generate_frames():
 
                         drawing_number += 1
 
-                        save_message = "DRAWING SAVED"
+                        save_message = (
+                            "DRAWING SAVED"
+                        )
+
                         save_message_timer = 45
 
-                elif command.startswith("color:"):
+                # ---------------------------------------------
+                # COLOR
+                # ---------------------------------------------
+
+                elif command.startswith(
+                    "color:"
+                ):
 
                     try:
 
                         color_index = int(
-                            command.split(":", 1)[1]
+                            command.split(
+                                ":",
+                                1
+                            )[1]
                         )
 
-                        if 0 <= color_index < len(COLORS):
+                        if (
+                            0
+                            <= color_index
+                            < len(COLORS)
+                        ):
 
-                            current_color = COLORS[
-                                color_index
-                            ][1]
+                            current_color = (
+                                COLORS[
+                                    color_index
+                                ][1]
+                            )
 
-                    except (ValueError, IndexError):
+                            previous_x = None
+                            previous_y = None
 
-                        pass
+                            print(
+                                "COLOR:",
+                                COLORS[
+                                    color_index
+                                ][0]
+                            )
+
+                    except (
+                        ValueError,
+                        IndexError
+                    ):
+
+                        print(
+                            "Invalid color command:",
+                            command
+                        )
+
+                # ---------------------------------------------
+                # QUIT
+                # ---------------------------------------------
 
                 elif command == "quit":
 
                     stop_event.set()
 
+                    break
 
+                # ---------------------------------------------
+                # UNKNOWN COMMAND
+                # ---------------------------------------------
 
-            # ----------------------------------------------------
+                else:
+
+                    print(
+                        "Unknown web command:",
+                        command
+                    )
+
+            # Stop immediately after quit.
+            if stop_event.is_set():
+                break
+
+            # =================================================
             # FPS
-            # ----------------------------------------------------
+            # =================================================
 
             current_time = time.perf_counter()
 
@@ -1295,9 +1251,9 @@ def generate_frames():
 
             previous_time = current_time
 
-            # ----------------------------------------------------
-            # MediaPipe image
-            # ----------------------------------------------------
+            # =================================================
+            # MEDIAPIPE IMAGE
+            # =================================================
 
             rgb_frame = cv2.cvtColor(
                 frame,
@@ -1309,9 +1265,9 @@ def generate_frames():
                 data=rgb_frame
             )
 
-            # ----------------------------------------------------
-            # Monotonic timestamp
-            # ----------------------------------------------------
+            # =================================================
+            # TIMESTAMP
+            # =================================================
 
             timestamp = int(
                 time.monotonic() * 1000
@@ -1320,15 +1276,14 @@ def generate_frames():
             if timestamp <= last_timestamp:
 
                 timestamp = (
-                    last_timestamp +
-                    1
+                    last_timestamp + 1
                 )
 
             last_timestamp = timestamp
 
-            # ----------------------------------------------------
-            # Detect hand
-            # ----------------------------------------------------
+            # =================================================
+            # HAND DETECTION
+            # =================================================
 
             result = landmarker.detect_for_video(
                 mp_image,
@@ -1337,19 +1292,21 @@ def generate_frames():
 
             gesture = "NO HAND"
 
-            # ====================================================
+            # =================================================
             # HAND FOUND
-            # ====================================================
+            # =================================================
 
             if result.hand_landmarks:
 
                 hand = result.hand_landmarks[0]
 
                 # ------------------------------------------------
-                # Finger states
+                # FINGERS
                 # ------------------------------------------------
 
-                fingers = fingers_up(hand)
+                fingers = fingers_up(
+                    hand
+                )
 
                 index = fingers[0]
                 middle = fingers[1]
@@ -1357,20 +1314,22 @@ def generate_frames():
                 pinky = fingers[3]
 
                 # ------------------------------------------------
-                # Thumbs up
+                # THUMB
                 # ------------------------------------------------
 
-                thumbs_up = is_thumbs_up(hand)
+                thumbs_up = is_thumbs_up(
+                    hand
+                )
 
                 # ------------------------------------------------
-                # Fingertips
+                # TIPS
                 # ------------------------------------------------
 
                 thumb_tip = hand[4]
                 index_tip = hand[8]
 
                 # ------------------------------------------------
-                # Pinch
+                # PINCH
                 # ------------------------------------------------
 
                 pinch_distance = distance(
@@ -1385,7 +1344,7 @@ def generate_frames():
                 )
 
                 # ------------------------------------------------
-                # Brush size
+                # BRUSH SIZE
                 # ------------------------------------------------
 
                 if is_pinching:
@@ -1410,7 +1369,7 @@ def generate_frames():
                     )
 
                 # ------------------------------------------------
-                # Gesture recognition
+                # GESTURE RECOGNITION
                 # ------------------------------------------------
 
                 if thumbs_up:
@@ -1462,7 +1421,7 @@ def generate_frames():
                     gesture = "UNKNOWN"
 
                 # ------------------------------------------------
-                # Index coordinates
+                # INDEX POSITION
                 # ------------------------------------------------
 
                 raw_x = int(
@@ -1490,7 +1449,7 @@ def generate_frames():
                 )
 
                 # ------------------------------------------------
-                # Smoothing
+                # SMOOTH POSITION
                 # ------------------------------------------------
 
                 if previous_x is not None:
@@ -1519,7 +1478,7 @@ def generate_frames():
                     y = raw_y
 
                 # =================================================
-                # SAVE
+                # SAVE GESTURE
                 # =================================================
 
                 if gesture == "SAVE":
@@ -1535,10 +1494,12 @@ def generate_frames():
                         > gesture_cooldown
                     ):
 
-                        success, filename = save_drawing(
-                            canvas,
-                            drawings_folder,
-                            drawing_number
+                        success, filename = (
+                            save_drawing(
+                                canvas,
+                                drawings_folder,
+                                drawing_number
+                            )
                         )
 
                         if success:
@@ -1558,7 +1519,7 @@ def generate_frames():
                             last_save_time = now
 
                 # =================================================
-                # SIZE
+                # BRUSH SIZE
                 # =================================================
 
                 elif gesture == "SIZE":
@@ -1588,14 +1549,10 @@ def generate_frames():
 
                     now = time.time()
 
-                    # ------------------------------------------------
-                    # Correct palette coordinates
-                    # ------------------------------------------------
-
                     palette_start_x = 230
                     palette_spacing = 42
 
-                    if raw_y < 95:
+                    if raw_y < 100:
 
                         color_index = round(
                             (
@@ -1616,10 +1573,11 @@ def generate_frames():
                                 palette_spacing
                             )
 
-                            # Only select when actually near color
                             if (
-                                abs(raw_x - color_x)
-                                <= 24
+                                abs(
+                                    raw_x -
+                                    color_x
+                                ) <= 24
                             ):
 
                                 if (
@@ -1636,19 +1594,21 @@ def generate_frames():
 
                                     last_color_time = now
 
+                                    print(
+                                        "GESTURE COLOR:",
+                                        COLORS[
+                                            color_index
+                                        ][0]
+                                    )
+
                 # =================================================
                 # DRAW
                 # =================================================
 
                 elif gesture == "DRAW":
 
-                    # ------------------------------------------------
-                    # Protect top and bottom UI
-                    # ------------------------------------------------
-
                     bottom_ui_start = (
-                        height -
-                        155
+                        height - 155
                     )
 
                     if (
@@ -1656,7 +1616,10 @@ def generate_frames():
                         and y < bottom_ui_start
                     ):
 
+                        # -----------------------------------------
                         # New stroke
+                        # -----------------------------------------
+
                         if (
                             previous_x is None
                             or previous_y is None
@@ -1666,62 +1629,17 @@ def generate_frames():
                                 undo_stack,
                                 redo_stack,
                                 canvas,
+                                canvas_mask,
                                 max_history
                             )
 
-                        # Continue stroke
-                        if (
-                            previous_x is not None
-                            and previous_y is not None
-                        ):
-
-# ------------------------------------------------
-# Draw smooth pencil stroke
-# ------------------------------------------------
-
-                            if (
-                                previous_x is not None
-                                and previous_y is not None
-                            ):
-
-                                cv2.line(
-                                    canvas,
-                                    (
-                                        previous_x,
-                                        previous_y
-                                    ),
-                                    (
-                                        x,
-                                        y
-                                    ),
-                                    current_color,
-                                    brush_size,
-                                    cv2.LINE_AA
-                                )
-
-                                cv2.line(
-                                    canvas_mask,
-                                    (
-                                        previous_x,
-                                        previous_y
-                                    ),
-                                    (
-                                        x,
-                                        y
-                                    ),
-                                    255,
-                                    brush_size,
-                                    cv2.LINE_AA
-                                )
-
-
-                            # ------------------------------------------------
-                            # Sharper pencil tip
-                            # ------------------------------------------------
-
+                            # Small starting point.
                             tip_radius = max(
                                 1,
-                                int(brush_size * 0.20)
+                                int(
+                                    brush_size *
+                                    0.20
+                                )
                             )
 
                             cv2.circle(
@@ -1729,6 +1647,78 @@ def generate_frames():
                                 (x, y),
                                 tip_radius,
                                 current_color,
+                                -1,
+                                cv2.LINE_AA
+                            )
+
+                            cv2.circle(
+                                canvas_mask,
+                                (x, y),
+                                tip_radius,
+                                255,
+                                -1,
+                                cv2.LINE_AA
+                            )
+
+                        # -----------------------------------------
+                        # Continue stroke
+                        # -----------------------------------------
+
+                        else:
+
+                            cv2.line(
+                                canvas,
+                                (
+                                    previous_x,
+                                    previous_y
+                                ),
+                                (
+                                    x,
+                                    y
+                                ),
+                                current_color,
+                                brush_size,
+                                cv2.LINE_AA
+                            )
+
+                            cv2.line(
+                                canvas_mask,
+                                (
+                                    previous_x,
+                                    previous_y
+                                ),
+                                (
+                                    x,
+                                    y
+                                ),
+                                255,
+                                brush_size,
+                                cv2.LINE_AA
+                            )
+
+                            # Sharper pencil tip.
+                            tip_radius = max(
+                                1,
+                                int(
+                                    brush_size *
+                                    0.20
+                                )
+                            )
+
+                            cv2.circle(
+                                canvas,
+                                (x, y),
+                                tip_radius,
+                                current_color,
+                                -1,
+                                cv2.LINE_AA
+                            )
+
+                            cv2.circle(
+                                canvas_mask,
+                                (x, y),
+                                tip_radius,
+                                255,
                                 -1,
                                 cv2.LINE_AA
                             )
@@ -1741,35 +1731,33 @@ def generate_frames():
                         previous_x = None
                         previous_y = None
 
-                        cv2.circle(
-                            canvas_mask,
-                            (x, y),
-                            tip_radius,
-                            255,
-                            -1,
-                            cv2.LINE_AA
-                        )
-
                 # =================================================
                 # ERASE
                 # =================================================
 
                 elif gesture == "ERASE":
 
-                    # Save state at beginning of erase
+                    # ---------------------------------------------
+                    # Start a new erase operation
+                    # ---------------------------------------------
+
                     if (
                         previous_x is None
-                        and previous_y is None
+                        or previous_y is None
                     ):
 
                         push_undo(
                             undo_stack,
                             redo_stack,
                             canvas,
+                            canvas_mask,
                             max_history
                         )
 
-                    # Protect top/bottom UI
+                    # ---------------------------------------------
+                    # Protect UI
+                    # ---------------------------------------------
+
                     if (
                         y > 90
                         and y < height - 155
@@ -1783,6 +1771,7 @@ def generate_frames():
                             -1,
                             cv2.LINE_AA
                         )
+
                         cv2.circle(
                             canvas_mask,
                             (x, y),
@@ -1817,7 +1806,7 @@ def generate_frames():
                     previous_y = None
 
                 # =================================================
-                # IMPORTANT LANDMARKS
+                # LANDMARKS
                 # =================================================
 
                 important_points = [
@@ -1883,13 +1872,7 @@ def generate_frames():
             )
 
             # ====================================================
-            # BOTTOM UI
-            # ====================================================
-            # The website renders the bottom tool dock itself.
-            # Do not draw another copy into the MJPEG stream.
-
-            # ====================================================
-            # SAVE NOTIFICATION
+            # SAVE / STATUS NOTIFICATION
             # ====================================================
 
             if save_message_timer > 0:
@@ -1916,16 +1899,16 @@ def generate_frames():
             )
 
             # ====================================================
-
-            # ====================================================
-            # STREAM FRAME TO BROWSER
+            # ENCODE FRAME
             # ====================================================
 
             success, encoded = cv2.imencode(
                 ".jpg",
                 output,
                 [
-                    int(cv2.IMWRITE_JPEG_QUALITY),
+                    int(
+                        cv2.IMWRITE_JPEG_QUALITY
+                    ),
                     85
                 ]
             )
@@ -1935,26 +1918,37 @@ def generate_frames():
                 yield (
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n\r\n"
-                    + encoded.tobytes()
-                    + b"\r\n"
+                    +
+                    encoded.tobytes()
+                    +
+                    b"\r\n"
                 )
 
-            if stop_event.is_set():
-
-                break
+        # ====================================================
+        # CLEANUP
+        # ====================================================
 
         camera.release()
+
+        print(
+            "AI Air Pencil camera stopped."
+        )
 
 
 # ============================================================
 # DIRECT TEST
 # ============================================================
-# The Flask app imports this module and calls generate_frames().
-# Running this file directly starts the generator for testing.
-# It will not open an OpenCV window; the browser is the UI.
-# ============================================================
 
 if __name__ == "__main__":
 
-    print("AI Air Pencil web engine loaded.")
-    print("Start the website with: python app.py")
+    print(
+        "AI Air Pencil web engine loaded."
+    )
+
+    print(
+        "Start the website with:"
+    )
+
+    print(
+        "python app.py"
+    )

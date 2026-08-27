@@ -330,56 +330,30 @@
 
                     <div class="dock-tools">
 
-
-                        <button
-                            class="tool"
-                            data-command="undo"
-                            type="button"
-                        >
+                        <button class="tool" data-command="undo" type="button">
                             UNDO
                             <span>Z</span>
                         </button>
 
-
-                        <button
-                            class="tool"
-                            data-command="redo"
-                            type="button"
-                        >
+                        <button class="tool" data-command="redo" type="button">
                             REDO
                             <span>Y</span>
                         </button>
 
-
-                        <button
-                            class="tool"
-                            data-command="clear"
-                            type="button"
-                        >
+                        <button class="tool" data-command="clear" type="button">
                             CLEAR
                             <span>C</span>
                         </button>
 
-
-                        <button
-                            class="tool active"
-                            data-command="save"
-                            type="button"
-                        >
+                        <button class="tool active" data-command="save" type="button">
                             SAVE
                             <span>S</span>
                         </button>
 
-
-                        <button
-                            class="tool"
-                            data-command="quit"
-                            type="button"
-                        >
+                        <button class="tool" data-command="quit" type="button">
                             QUIT
                             <span>Q</span>
                         </button>
-
 
                     </div>
 
@@ -1802,6 +1776,187 @@ loadSavedDrawings();
 
 </script>
 
+<script>
+
+document.addEventListener("DOMContentLoaded", () => {
+
+    const toolButtons =
+        document.querySelectorAll(".tool[data-command]");
+
+
+    toolButtons.forEach(button => {
+
+        button.addEventListener("click", async () => {
+
+            const command =
+                button.dataset.command;
+
+            try {
+
+                button.disabled = true;
+
+
+                const response =
+                    await fetch("/command", {
+                        method: "POST",
+
+                        headers: {
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body: JSON.stringify({
+                            command: command
+                        })
+                    });
+
+
+                const data =
+                    await response.json();
+
+
+                if (!response.ok || !data.success) {
+
+                    console.error(
+                        "Command failed:",
+                        data.message
+                    );
+
+                    alert(
+                        data.message ||
+                        "Command failed."
+                    );
+
+                    return;
+                }
+
+
+                console.log(
+                    "Command executed:",
+                    command
+                );
+
+
+                // Small visual feedback
+                button.classList.add(
+                    "command-clicked"
+                );
+
+
+                setTimeout(() => {
+
+                    button.classList.remove(
+                        "command-clicked"
+                    );
+
+                }, 180);
+
+
+            }
+
+            catch (error) {
+
+                console.error(
+                    "Command error:",
+                    error
+                );
+
+                alert(
+                    "Could not communicate with AI Air Pencil."
+                );
+
+            }
+
+            finally {
+
+                button.disabled = false;
+
+            }
+
+        });
+
+    });
+
+
+    // ---------------------------------------------------------
+    // Keyboard shortcuts
+    // ---------------------------------------------------------
+
+    document.addEventListener(
+        "keydown",
+        async (event) => {
+
+            // Don't trigger shortcuts while typing
+            const tag =
+                event.target.tagName.toLowerCase();
+
+            if (
+                tag === "input" ||
+                tag === "textarea"
+            ) {
+                return;
+            }
+
+
+            const key =
+                event.key.toLowerCase();
+
+
+            const shortcuts = {
+
+                "z": "undo",
+                "y": "redo",
+                "c": "clear",
+                "s": "save",
+                "q": "quit"
+
+            };
+
+
+            const command =
+                shortcuts[key];
+
+
+            if (!command) {
+                return;
+            }
+
+
+            try {
+
+                await fetch(
+                    "/command",
+                    {
+                        method: "POST",
+
+                        headers: {
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body: JSON.stringify({
+                            command: command
+                        })
+                    }
+                );
+
+            }
+
+            catch (error) {
+
+                console.error(
+                    "Keyboard command error:",
+                    error
+                );
+
+            }
+
+        }
+    );
+
+});
+
+</script>
 
 </body>
 

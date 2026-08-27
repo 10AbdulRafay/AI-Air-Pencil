@@ -1,5 +1,6 @@
 Flask
+Werkzeug
 opencv-python
 mediapipe
 numpy
-gunicorn
+waitress
