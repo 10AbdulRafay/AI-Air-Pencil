@@ -1,6 +1,6 @@
 Flask
 Werkzeug
-opencv-python
+opencv-python-headless
 mediapipe
 numpy
 waitress
