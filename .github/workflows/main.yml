@@ -16,5 +16,5 @@ jobs:
           VELIXIR_TOKEN: ${{ secrets.VELIXIR_API_KEY }}
         run: |
           curl -fsSL https://velixir.net/install.sh | sh
-          export PATH="$HOME/.local/bin:$HOME/bin:$PATH"
+          export PATH="$HOME/.velixir/bin:$PATH"
           velixir deploy --app beae298c-ecfc-45e7-9e79-52a549bbdde1
