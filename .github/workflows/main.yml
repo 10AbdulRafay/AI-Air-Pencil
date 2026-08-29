@@ -7,8 +7,14 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
-      - uses: velixir/velixir/actions/deploy@v1
-        with:
-          api-key: ${{ secrets.VELIXIR_API_KEY }}
+
+      - name: Install Velixir CLI
+        run: curl -fsSL https://velixir.net/install.sh | sh
+
+      - name: Deploy to Velixir
+        env:
+          VELIXIR_TOKEN: ${{ secrets.VELIXIR_API_KEY }}
+        run: velixir deploy --app beae298c-ecfc-45e7-9e79-52a549bbdde1
