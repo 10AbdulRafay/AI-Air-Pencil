@@ -11,10 +11,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Velixir CLI
-        run: curl -fsSL https://velixir.net/install.sh | sh
-
-      - name: Deploy to Velixir
+      - name: Install and deploy with Velixir CLI
         env:
           VELIXIR_TOKEN: ${{ secrets.VELIXIR_API_KEY }}
-        run: velixir deploy --app beae298c-ecfc-45e7-9e79-52a549bbdde1
+        run: |
+          curl -fsSL https://velixir.net/install.sh | sh
+          export PATH="$HOME/.local/bin:$HOME/bin:$PATH"
+          velixir deploy --app beae298c-ecfc-45e7-9e79-52a549bbdde1
